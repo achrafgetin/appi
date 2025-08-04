@@ -1,67 +1,46 @@
-import numpy as np
-import os
+# Path: backend/skeleton_run.py
 import cv2
-import sys
 import mediapipe as mp
+import argparse
+import os
 
-def extract_skeleton_from_image(image_path):
+def generate_and_save_skeleton(image_path, skel_on_img_dir, skel_only_dir, processed_index):
+    # ... (Your existing mediapipe setup code for drawing_utils, pose, etc.)
     mp_drawing = mp.solutions.drawing_utils
     mp_pose = mp.solutions.pose
 
-    # Load image
     image = cv2.imread(image_path)
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-    # Init MediaPipe Pose
+    # ... (Your existing code to process the image with mediapipe)
     with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
-        results = pose.process(image_rgb)
+        image.flags.writeable = False
+        results = pose.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        image.flags.writeable = True
+        
+        # --- THIS IS THE CRUCIAL FIX ---
+        # Create the output directories if they don't exist
+        os.makedirs(skel_on_img_dir, exist_ok=True)
+        os.makedirs(skel_only_dir, exist_ok=True)
 
-        if results.pose_landmarks:
-            skeleton = []
-            for landmark in results.pose_landmarks.landmark:
-                skeleton.append(landmark.x)
-                skeleton.append(landmark.y)
-                skeleton.append(landmark.z if landmark.z else 0)
+        # Draw the skeleton on the original image
+        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        output_path_on_img = os.path.join(skel_on_img_dir, f"processed_image_{processed_index}.png")
+        cv2.imwrite(output_path_on_img, image)
+        print(f"Saved skeleton on image to: {output_path_on_img}")
 
-            # Extract name (without extension)
-            filename = os.path.splitext(os.path.basename(image_path))[0]
+        # Create a blank image and draw only the skeleton
+        blank_image = cv2.imread(image_path) # Read again to get a clean copy
+        blank_image[:] = (0, 0, 0) # Make it black
+        mp_drawing.draw_landmarks(blank_image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        output_path_only = os.path.join(skel_only_dir, f"processed_image_{processed_index}.png")
+        cv2.imwrite(output_path_only, blank_image)
+        print(f"Saved skeleton only to: {output_path_only}")
+        # --------------------------------
 
-            # Prepare output folders
-            out_dir1 = os.path.join("skeleton_images", "image_with_skeleton")
-            out_dir2 = os.path.join("skeleton_images", "opImg")
-            os.makedirs(out_dir1, exist_ok=True)
-            os.makedirs(out_dir2, exist_ok=True)
-
-            # Save image with skeleton drawn on original
-            image_with_skeleton_path = os.path.join(out_dir1, f"processed_image_{filename}.png")
-            mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-            cv2.imwrite(image_with_skeleton_path, image)
-
-            # Save image with only the skeleton
-            opImg = np.ones_like(image) * 255  # white background
-            mp_drawing.draw_landmarks(
-                opImg,
-                results.pose_landmarks,
-                mp_pose.POSE_CONNECTIONS,
-                connection_drawing_spec=mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2)
-            )
-            skeleton_image_path = os.path.join(out_dir2, f"processed_image_{filename}.png")
-            cv2.imwrite(skeleton_image_path, opImg)
-
-            return np.array(skeleton), image_with_skeleton_path, skeleton_image_path
-
-    return None, None, None
-
-# Script usage
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python skeleton_run.py <image_path>")
-        sys.exit(1)
-
-    image_path = sys.argv[1]
-    skeleton_data, image_with_skeleton_path, skeleton_image_path = extract_skeleton_from_image(image_path)
-    
-    if skeleton_data is not None:
-        print(f"Skeleton extracted and saved to:\n - {image_with_skeleton_path}\n - {skeleton_image_path}")
-    else:
-        print("No skeleton detected.")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('image_path', type=str)
+    parser.add_argument('skel_on_img_dir', type=str)
+    parser.add_argument('skel_only_dir', type=str)
+    parser.add_argument('processed_index', type=int)
+    args = parser.parse_args()
+    generate_and_save_skeleton(args.image_path, args.skel_on_img_dir, args.skel_only_dir, args.processed_index)
